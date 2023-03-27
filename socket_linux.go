@@ -1,6 +1,7 @@
 package netlink
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -175,7 +176,7 @@ func SocketGet(local, remote net.Addr) (*Socket, error) {
 // SocketDiagTCPInfo requests INET_DIAG_INFO for TCP protocol for specified family type and return with extension TCP info.
 func SocketDiagTCPInfo(family uint8) ([]*InetDiagTCPInfoResp, error) {
 	var result []*InetDiagTCPInfoResp
-	err := socketDiagTCPExecutor(family, func(m syscall.NetlinkMessage) error {
+	err := socketDiagExecutor(family, unix.IPPROTO_TCP, func(m syscall.NetlinkMessage) error {
 		sockInfo := &Socket{}
 		if err := sockInfo.deserialize(m.Data); err != nil {
 			return err
@@ -191,6 +192,7 @@ func SocketDiagTCPInfo(family uint8) ([]*InetDiagTCPInfoResp, error) {
 		}
 
 		result = append(result, res)
+
 		return nil
 	})
 	if err != nil {
@@ -262,9 +264,84 @@ loop:
 	return nil
 }
 
+// SocketDiagUDPInfo requests INET_DIAG_INFO for UDP protocol for specified family type and return with extension UDP info.
+func SocketDiagUDPInfo(family uint8) ([]*InetDiagTCPInfoResp, error) {
+	var result []*InetDiagTCPInfoResp
+	err := socketDiagExecutor(family, unix.IPPROTO_UDP, func(m syscall.NetlinkMessage) error {
+		sockInfo := &Socket{}
+		if err := sockInfo.deserialize(m.Data); err != nil {
+			return err
+		}
+		attrs, err := nl.ParseRouteAttr(m.Data[sizeofSocket:])
+		if err != nil {
+			return err
+		}
+
+		res, err := attrsToInetDiagTCPInfoResp(attrs, sockInfo)
+		if err != nil {
+			return err
+		}
+
+		result = append(result, res)
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func socketDiagExecutor(family uint8, protocol uint8, receiver func(syscall.NetlinkMessage) error) error {
+	s, err := nl.Subscribe(unix.NETLINK_INET_DIAG)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	req := nl.NewNetlinkRequest(nl.SOCK_DIAG_BY_FAMILY, unix.NLM_F_DUMP)
+	req.AddData(&socketRequest{
+		Family:   family,
+		Protocol: protocol,
+		Ext:      (1 << (INET_DIAG_VEGASINFO - 1)) | (1 << (INET_DIAG_INFO - 1)),
+		States:   uint32(0xfff), // All TCP states
+	})
+	s.Send(req)
+
+loop:
+	for {
+		msgs, from, err := s.Receive()
+		if err != nil {
+			return err
+		}
+		if from.Pid != nl.PidKernel {
+			return fmt.Errorf("Wrong sender portid %d, expected %d", from.Pid, nl.PidKernel)
+		}
+		if len(msgs) == 0 {
+			return errors.New("no message nor error from netlink")
+		}
+
+		for _, m := range msgs {
+			switch m.Header.Type {
+			case unix.NLMSG_DONE:
+				break loop
+			case unix.NLMSG_ERROR:
+				error := int32(native.Uint32(m.Data[0:4]))
+				return syscall.Errno(-error)
+			}
+			if err := receiver(m); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func attrsToInetDiagTCPInfoResp(attrs []syscall.NetlinkRouteAttr, sockInfo *Socket) (*InetDiagTCPInfoResp, error) {
 	var tcpInfo *TCPInfo
 	var tcpBBRInfo *TCPBBRInfo
+	var cgroup uint64
+
 	for _, a := range attrs {
 		if a.Attr.Type == INET_DIAG_INFO {
 			tcpInfo = &TCPInfo{}
@@ -281,11 +358,19 @@ func attrsToInetDiagTCPInfoResp(attrs []syscall.NetlinkRouteAttr, sockInfo *Sock
 			}
 			continue
 		}
+
+		if a.Attr.Type == INET_DIAG_CGROUP_ID {
+			rb := bytes.NewBuffer(a.Value)
+			next := rb.Next(8)
+			cgroup = native.Uint64(next)
+			continue
+		}
 	}
 
 	return &InetDiagTCPInfoResp{
 		InetDiagMsg: sockInfo,
 		TCPInfo:     tcpInfo,
 		TCPBBRInfo:  tcpBBRInfo,
+		CGroupID:    cgroup,
 	}, nil
 }
