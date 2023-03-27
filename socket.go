@@ -2,6 +2,31 @@ package netlink
 
 import "net"
 
+// Socket States
+const (
+	SS_FREE = iota
+	SS_UNCONNECTED
+	SS_CONNECTING
+	SS_CONNECTED
+	SS_DISCONNECTING
+)
+
+const (
+	SS_UNKNOWN = iota
+	SS_ESTABLISHED
+	SS_SYN_SENT
+	SS_SYN_RECV
+	SS_FIN_WAIT1
+	SS_FIN_WAIT2
+	SS_TIME_WAIT
+	SS_CLOSE
+	SS_CLOSE_WAIT
+	SS_LAST_ACK
+	SS_LISTEN
+	SS_CLOSING
+	SS_MAX
+)
+
 // SocketID identifies a single socket.
 type SocketID struct {
 	SourcePort      uint16

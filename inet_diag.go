@@ -34,3 +34,8 @@ type InetDiagTCPInfoResp struct {
 	TCPBBRInfo  *TCPBBRInfo
 	CGroupID    uint64
 }
+
+type InetDiagUDPInfoResp struct {
+	InetDiagMsg *Socket
+	CGroupID    uint64
+}

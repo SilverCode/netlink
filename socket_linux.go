@@ -265,8 +265,8 @@ loop:
 }
 
 // SocketDiagUDPInfo requests INET_DIAG_INFO for UDP protocol for specified family type and return with extension UDP info.
-func SocketDiagUDPInfo(family uint8) ([]*InetDiagTCPInfoResp, error) {
-	var result []*InetDiagTCPInfoResp
+func SocketDiagUDPInfo(family uint8) ([]*InetDiagUDPInfoResp, error) {
+	var result []*InetDiagUDPInfoResp
 	err := socketDiagExecutor(family, unix.IPPROTO_UDP, func(m syscall.NetlinkMessage) error {
 		sockInfo := &Socket{}
 		if err := sockInfo.deserialize(m.Data); err != nil {
@@ -277,7 +277,7 @@ func SocketDiagUDPInfo(family uint8) ([]*InetDiagTCPInfoResp, error) {
 			return err
 		}
 
-		res, err := attrsToInetDiagTCPInfoResp(attrs, sockInfo)
+		res, err := attrsToInetDiagUDPInfoResp(attrs, sockInfo)
 		if err != nil {
 			return err
 		}
@@ -371,6 +371,24 @@ func attrsToInetDiagTCPInfoResp(attrs []syscall.NetlinkRouteAttr, sockInfo *Sock
 		InetDiagMsg: sockInfo,
 		TCPInfo:     tcpInfo,
 		TCPBBRInfo:  tcpBBRInfo,
+		CGroupID:    cgroup,
+	}, nil
+}
+
+func attrsToInetDiagUDPInfoResp(attrs []syscall.NetlinkRouteAttr, sockInfo *Socket) (*InetDiagUDPInfoResp, error) {
+	var cgroup uint64
+
+	for _, a := range attrs {
+		if a.Attr.Type == INET_DIAG_CGROUP_ID {
+			rb := bytes.NewBuffer(a.Value)
+			next := rb.Next(8)
+			cgroup = native.Uint64(next)
+			continue
+		}
+	}
+
+	return &InetDiagUDPInfoResp{
+		InetDiagMsg: sockInfo,
 		CGroupID:    cgroup,
 	}, nil
 }
