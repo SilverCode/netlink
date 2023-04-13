@@ -173,10 +173,6 @@ func ruleHandle(rule *Rule, req *nl.NetlinkRequest) error {
 		req.AddData(nl.NewRtAttr(nl.FRA_UID_RANGE, b))
 	}
 
-	if rule.Protocol > 0 {
-		req.AddData(nl.NewRtAttr(nl.FRA_PROTOCOL, nl.Uint8Attr(rule.Protocol)))
-	}
-
 	_, err := req.Execute(unix.NETLINK_ROUTE, 0)
 	return err
 }
@@ -273,8 +269,6 @@ func (h *Handle) RuleListFiltered(family int, filter *Rule, filterMask uint64) (
 				rule.Sport = NewRulePortRange(native.Uint16(attrs[j].Value[0:2]), native.Uint16(attrs[j].Value[2:4]))
 			case nl.FRA_UID_RANGE:
 				rule.UIDRange = NewRuleUIDRange(native.Uint32(attrs[j].Value[0:4]), native.Uint32(attrs[j].Value[4:8]))
-			case nl.FRA_PROTOCOL:
-				rule.Protocol = uint8(attrs[j].Value[0])
 			}
 		}
 

@@ -27,7 +27,6 @@ type Rule struct {
 	Sport             *RulePortRange
 	IPProto           int
 	UIDRange          *RuleUIDRange
-	Protocol          uint8
 }
 
 func (r Rule) String() string {
